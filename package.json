@@ -1,13 +1,18 @@
 {
   "name": "obsidian-integrated-calendar",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unified calendar dashboard for Obsidian: subscribe to ICS calendars and merge with notes' events and tasks.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
   },
-  "keywords": ["obsidian", "calendar", "ics", "dataview"],
+  "keywords": [
+    "obsidian",
+    "calendar",
+    "ics",
+    "dataview"
+  ],
   "author": "slogup",
   "license": "MIT",
   "devDependencies": {
