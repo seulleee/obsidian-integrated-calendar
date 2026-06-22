@@ -3,8 +3,8 @@
   "name": "Integrated Calendar",
   "version": "0.1.0",
   "minAppVersion": "1.4.0",
-  "description": "Subscribe to iCloud/Outlook/Google ICS calendars and merge them with your notes' events and tasks. Month/week/day views and agenda lists via code blocks.",
-  "author": "slogup",
-  "authorUrl": "",
+  "description": "Subscribe to iCloud, Outlook, and Google ICS calendars and merge them with your notes' events and tasks in month, week, and day views.",
+  "author": "seulleee",
+  "authorUrl": "https://github.com/seulleee/obsidian-integrated-calendar",
   "isDesktopOnly": false
 }

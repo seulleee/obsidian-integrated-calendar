@@ -1,4 +1,4 @@
-import { Plugin, requestUrl } from "obsidian";
+import { Notice, Plugin, requestUrl } from "obsidian";
 import { ICSettings, DEFAULT_SETTINGS, ICSettingTab } from "./settings";
 import { renderCalendar, renderAgenda, RenderCtx } from "./render";
 import { FetchFn } from "./ics";
@@ -32,14 +32,10 @@ export default class IntegratedCalendarPlugin extends Plugin {
 
     this.addCommand({
       id: "clear-ics-cache",
-      name: "구독 캐시 비우고 새로고침",
+      name: "구독 캐시 비우기",
       callback: () => {
         this.icsCache = {};
-        // 열린 미리보기를 다시 그리도록 강제
-        this.app.workspace.trigger("integrated-calendar:refresh");
-        // 현재 활성 마크다운 뷰 리렌더
-        // @ts-ignore
-        this.app.workspace.activeLeaf?.rebuildView?.();
+        new Notice("Integrated Calendar: 구독 캐시를 비웠습니다. 노트를 다시 열면 새로 받아옵니다.");
       },
     });
   }

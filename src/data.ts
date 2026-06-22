@@ -2,18 +2,27 @@
  * data.ts — Obsidian vault 에서 로컬 일정(frontmatter)과 할일(체크박스)을 읽음.
  * Dataview 없이 metadataCache + vault.cachedRead 사용.
  */
-import { App, TFile, moment } from "obsidian";
+import { App, TFile, TFolder, moment, normalizePath } from "obsidian";
 import type { ICSettings } from "./settings";
 import type { CalEvent } from "./ics";
 
 function inExcluded(path: string, exclude: string): boolean {
-  return exclude.split(",").map((s) => s.trim()).filter(Boolean).some((p) => path.startsWith(p + "/") || path === p);
+  return exclude.split(",").map((s) => normalizePath(s.trim())).filter(Boolean).some((p) => path.startsWith(p + "/") || path === p);
 }
 
 function filesInFolder(app: App, folder: string): TFile[] {
   if (!folder) return [];
-  const norm = folder.replace(/\/$/, "");
-  return app.vault.getMarkdownFiles().filter((f) => f.path === norm + "/" + f.name || f.path.startsWith(norm + "/"));
+  const af = app.vault.getAbstractFileByPath(normalizePath(folder));
+  if (!(af instanceof TFolder)) return [];
+  const out: TFile[] = [];
+  const walk = (dir: TFolder) => {
+    for (const ch of dir.children) {
+      if (ch instanceof TFolder) walk(ch);
+      else if (ch instanceof TFile && ch.extension === "md") out.push(ch);
+    }
+  };
+  walk(af);
+  return out;
 }
 
 // 로컬 일정 (frontmatter 기반, 멀티데이 지원)

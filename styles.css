@@ -35,3 +35,6 @@
 .ic-ag-dot { border-left: 3px solid var(--text-muted); padding-left: 7px; flex: 1; }
 .ic-ag-dot.ic-task { border-left-color: var(--text-accent); }
 .ic-ag-empty { padding: 4px 9px; color: var(--text-faint); font-size: .8em; }
+
+/* 설정 탭 */
+.ic-color-input { width: 2.4em; height: 1.6em; padding: 0; border: 1px solid var(--background-modifier-border); border-radius: 4px; cursor: pointer; vertical-align: middle; }

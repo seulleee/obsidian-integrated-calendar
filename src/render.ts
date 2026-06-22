@@ -1,8 +1,9 @@
 /*
  * render.ts — 달력(월/주/일) + 아젠다 렌더링. 구독 + 로컬 일정 + 할일 통합.
+ * DOM API(createEl 등)로만 그립니다 (innerHTML 미사용).
  */
 import { App, moment } from "obsidian";
-import type { ICSettings, CalendarSource } from "./settings";
+import type { ICSettings } from "./settings";
 import { fetchExternal, CalEvent, SourceError, FetchFn, ParsedSource } from "./ics";
 import { getLocalEvents, getDueTasks } from "./data";
 
@@ -10,10 +11,6 @@ export interface RenderCtx {
   app: App;
   settings: ICSettings;
   fetch: FetchFn;
-}
-
-function esc(s: any): string {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 function enabledSources(settings: ICSettings): ParsedSource[] {
@@ -31,17 +28,14 @@ async function collect(ctx: RenderCtx, startISO: string, endISO: string): Promis
   const errs: SourceError[] = [];
   const push = (e: CalEvent) => { (evMap[e.date] = evMap[e.date] || []).push(e); };
 
-  // 로컬 일정
   try { getLocalEvents(ctx.app, ctx.settings, startISO, endISO).forEach(push); } catch (e) { /* ignore */ }
 
-  // 구독 일정
   const ext = await fetchExternal(enabledSources(ctx.settings), ctx.fetch, startISO, endISO);
   for (const e of ext) {
     if ((e as SourceError).error) errs.push(e as SourceError);
     else push(e as CalEvent);
   }
 
-  // 할일
   let tkMap: Record<string, string[]> = {};
   try { tkMap = await getDueTasks(ctx.app, ctx.settings, startISO, endISO); } catch (e) { /* ignore */ }
 
@@ -53,10 +47,15 @@ function weekdayLabels(mondayFirst: boolean): string[] {
   return mondayFirst ? base.slice(1).concat(base[0]) : base;
 }
 
-function monthGrid(anchor: any, c: Collected, today: any, mondayFirst: boolean): string {
+function dowClassFor(col: number, mondayFirst: boolean): string {
+  const realDow = mondayFirst ? (col + 1) % 7 : col;
+  return realDow === 0 ? "ic-sun" : realDow === 6 ? "ic-sat" : "";
+}
+
+function buildMonth(parent: HTMLElement, anchor: any, c: Collected, today: any, mondayFirst: boolean): void {
   const year = anchor.year(), month = anchor.month() + 1;
   const numDays = anchor.clone().endOf("month").date();
-  const firstDow = anchor.clone().startOf("month").day(); // 0=일
+  const firstDow = anchor.clone().startOf("month").day();
   const startCol = mondayFirst ? (firstDow + 6) % 7 : firstDow;
   const pad = (n: number) => String(n).padStart(2, "0");
   const cells: (number | null)[] = [];
@@ -65,36 +64,36 @@ function monthGrid(anchor: any, c: Collected, today: any, mondayFirst: boolean):
   while (cells.length % 7 !== 0) cells.push(null);
 
   const wd = weekdayLabels(mondayFirst);
-  const dowClass = (col: number) => {
-    const realDow = mondayFirst ? (col + 1) % 7 : col;
-    return realDow === 0 ? "ic-sun" : realDow === 6 ? "ic-sat" : "";
-  };
+  const table = parent.createEl("table", { cls: "ic-mcal" });
+  const htr = table.createEl("thead").createEl("tr");
+  wd.forEach((w, i) => htr.createEl("th", { text: w, cls: dowClassFor(i, mondayFirst) }));
+  const tbody = table.createEl("tbody");
+  let tr = tbody.createEl("tr");
 
-  let html = `<table class="ic-mcal"><thead><tr>`;
-  wd.forEach((w, i) => (html += `<th class="${dowClass(i)}">${w}</th>`));
-  html += `</tr></thead><tbody><tr>`;
   cells.forEach((d, idx) => {
-    if (idx > 0 && idx % 7 === 0) html += `</tr><tr>`;
+    if (idx > 0 && idx % 7 === 0) tr = tbody.createEl("tr");
     const col = idx % 7;
-    const colCls = dowClass(col);
-    if (d === null) { html += `<td class="${colCls}"></td>`; return; }
+    const colCls = dowClassFor(col, mondayFirst);
+    if (d === null) { tr.createEl("td", { cls: colCls }); return; }
     const key = `${year}-${pad(month)}-${pad(d)}`;
     const isToday = today.year() === year && today.month() + 1 === month && today.date() === d;
     const evs = c.evMap[key] || [];
     const tc = (c.tkMap[key] || []).length;
-    let inner = `<div class="ic-num">${d}</div>`;
-    evs.slice(0, 3).forEach((ev) =>
-      inner += `<div class="ic-ev" style="border-left-color:${ev.color}" title="${esc(ev.title)}">${esc(ev.title)}</div>`);
-    if (evs.length > 3) inner += `<div class="ic-ev ic-more">+${evs.length - 3} 더</div>`;
-    if (tc > 0) inner += `<div class="ic-tsk">✅ ${tc}건</div>`;
-    html += `<td class="${isToday ? "ic-today" : colCls}">${inner}</td>`;
+    const td = tr.createEl("td", { cls: isToday ? "ic-today" : colCls });
+    td.createEl("div", { cls: "ic-num", text: String(d) });
+    evs.slice(0, 3).forEach((ev) => {
+      const e = td.createEl("div", { cls: "ic-ev", text: ev.title });
+      e.style.borderLeftColor = ev.color;
+      e.setAttr("title", ev.title);
+    });
+    if (evs.length > 3) td.createEl("div", { cls: "ic-ev ic-more", text: `+${evs.length - 3} 더` });
+    if (tc > 0) td.createEl("div", { cls: "ic-tsk", text: `✅ ${tc}건` });
   });
-  return html + `</tr></tbody></table>`;
 }
 
-function agendaGrid(sM: any, eM: any, c: Collected, today: any): string {
+function buildAgenda(parent: HTMLElement, sM: any, eM: any, c: Collected, today: any): void {
   const KWD = ["일", "월", "화", "수", "목", "금", "토"];
-  let html = "", cur = sM.clone(), g = 0;
+  let cur = sM.clone(), g = 0;
   while (cur.isSameOrBefore(eM, "day") && g < 60) {
     const key = cur.format("YYYY-MM-DD");
     const isToday = cur.isSame(today, "day");
@@ -104,27 +103,38 @@ function agendaGrid(sM: any, eM: any, c: Collected, today: any): string {
       return (a.time || "").localeCompare(b.time || "");
     });
     const tks = c.tkMap[key] || [];
-    html += `<div class="ic-ag-day${isToday ? " ic-today" : ""}">`;
-    html += `<div class="ic-ag-dh ${wkCls}${isToday ? " ic-today" : ""}">${cur.format("M월 D일")} (${KWD[cur.day()]})${isToday ? " · 오늘" : ""}</div>`;
-    if (!evs.length && !tks.length) html += `<div class="ic-ag-empty">일정·할일 없음</div>`;
+
+    const day = parent.createEl("div", { cls: "ic-ag-day" + (isToday ? " ic-today" : "") });
+    day.createEl("div", {
+      cls: ("ic-ag-dh " + wkCls + (isToday ? " ic-today" : "")).trim(),
+      text: `${cur.format("M월 D일")} (${KWD[cur.day()]})${isToday ? " · 오늘" : ""}`,
+    });
+    if (!evs.length && !tks.length) day.createEl("div", { cls: "ic-ag-empty", text: "일정·할일 없음" });
     evs.forEach((ev) => {
       const when = ev.multiday ? "연속" : ev.allDay ? "종일" : ev.time;
-      html += `<div class="ic-ag-row"><span class="ic-ag-time">${ev.icon} ${when}</span><span class="ic-ag-dot" style="border-left-color:${ev.color}">${esc(ev.title)}</span></div>`;
+      const row = day.createEl("div", { cls: "ic-ag-row" });
+      row.createEl("span", { cls: "ic-ag-time", text: `${ev.icon} ${when}` });
+      const dot = row.createEl("span", { cls: "ic-ag-dot", text: ev.title });
+      dot.style.borderLeftColor = ev.color;
     });
     tks.forEach((t) => {
-      html += `<div class="ic-ag-row"><span class="ic-ag-time">✅ 할일</span><span class="ic-ag-dot ic-task">${esc(t)}</span></div>`;
+      const row = day.createEl("div", { cls: "ic-ag-row" });
+      row.createEl("span", { cls: "ic-ag-time", text: "✅ 할일" });
+      row.createEl("span", { cls: "ic-ag-dot ic-task", text: t });
     });
-    html += `</div>`;
     cur.add(1, "day"); g++;
   }
-  return html;
 }
 
-function legend(settings: ICSettings): string {
-  const parts = [`${settings.localIcon} ${esc(settings.localName)}`]
-    .concat(settings.sources.filter((s) => s.enabled).map((s) => `${s.icon} ${esc(s.name || "구독")}`))
-    .concat(["✅ 할일"]);
-  return parts.join(" · ");
+function buildLegend(parent: HTMLElement, settings: ICSettings): void {
+  const el = parent.createDiv({ cls: "ic-legend" });
+  el.createSpan({ text: `${settings.localIcon} ${settings.localName}` });
+  settings.sources.filter((s) => s.enabled).forEach((s) => el.createSpan({ text: ` · ${s.icon} ${s.name || "구독"}` }));
+  el.createSpan({ text: " · ✅ 할일" });
+}
+
+function showErrors(parent: HTMLElement, errs: SourceError[]): void {
+  if (errs.length) parent.createEl("div", { cls: "ic-err", text: "⚠️ " + errs.map((e) => e.source + ": " + e.message).join(" / ") });
 }
 
 // 월/주/일 전환 인터랙티브 달력
@@ -143,12 +153,12 @@ export async function renderCalendar(el: HTMLElement, ctx: RenderCtx, initialVie
   const btnMonth = bar.createEl("button", { text: "월" });
   const btnWeek = bar.createEl("button", { text: "주" });
   const btnDay = bar.createEl("button", { text: "일" });
-  const legendEl = el.createDiv({ cls: "ic-legend", text: legend(ctx.settings) });
+  buildLegend(el, ctx.settings);
   const bodyEl = el.createDiv({ cls: "ic-body" });
 
   const setActive = () => {
-    [["month", btnMonth], ["week", btnWeek], ["day", btnDay]].forEach(([v, b]) =>
-      (b as HTMLElement).toggleClass("ic-active", view === v));
+    ([["month", btnMonth], ["week", btnWeek], ["day", btnDay]] as [string, HTMLElement][])
+      .forEach(([v, b]) => b.toggleClass("ic-active", view === v));
   };
 
   const draw = async () => {
@@ -162,10 +172,10 @@ export async function renderCalendar(el: HTMLElement, ctx: RenderCtx, initialVie
     bodyEl.createDiv({ cls: "ic-loading", text: "불러오는 중…" });
     try {
       const c = await collect(ctx, sM.format("YYYY-MM-DD"), eM.format("YYYY-MM-DD"));
-      const html = view === "month" ? monthGrid(anchor, c, today, ctx.settings.firstDayMonday) : agendaGrid(sM, eM, c, today);
       bodyEl.empty();
-      bodyEl.innerHTML = html;
-      if (c.errs.length) bodyEl.createDiv({ cls: "ic-err", text: "⚠️ " + c.errs.map((e) => e.source + ": " + e.message).join(" / ") });
+      if (view === "month") buildMonth(bodyEl, anchor, c, today, ctx.settings.firstDayMonday);
+      else buildAgenda(bodyEl, sM, eM, c, today);
+      showErrors(bodyEl, c.errs);
     } catch (e: any) {
       bodyEl.empty();
       bodyEl.createDiv({ cls: "ic-err", text: "⚠️ " + (e?.message || String(e)) });
@@ -190,18 +200,17 @@ export async function renderAgenda(el: HTMLElement, ctx: RenderCtx, spec: string
   const today = moment().startOf("day");
   let sM = today.clone(), eM = today.clone().endOf("day");
   const s = (spec || "today").trim();
-  if (s === "today") { /* 오늘 */ }
-  else if (s === "week") { sM = today.clone().startOf("week"); eM = today.clone().endOf("week"); }
+  if (s === "week") { sM = today.clone().startOf("week"); eM = today.clone().endOf("week"); }
   else if (/^\d+$/.test(s)) { eM = today.clone().add(parseInt(s, 10), "days").endOf("day"); }
 
-  el.createDiv({ cls: "ic-legend", text: legend(ctx.settings) });
+  buildLegend(el, ctx.settings);
   const bodyEl = el.createDiv({ cls: "ic-body" });
   bodyEl.createDiv({ cls: "ic-loading", text: "불러오는 중…" });
   try {
     const c = await collect(ctx, sM.format("YYYY-MM-DD"), eM.format("YYYY-MM-DD"));
     bodyEl.empty();
-    bodyEl.innerHTML = agendaGrid(sM, eM, c, today);
-    if (c.errs.length) bodyEl.createDiv({ cls: "ic-err", text: "⚠️ " + c.errs.map((e) => e.source + ": " + e.message).join(" / ") });
+    buildAgenda(bodyEl, sM, eM, c, today);
+    showErrors(bodyEl, c.errs);
   } catch (e: any) {
     bodyEl.empty();
     bodyEl.createDiv({ cls: "ic-err", text: "⚠️ " + (e?.message || String(e)) });

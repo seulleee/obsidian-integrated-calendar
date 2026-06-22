@@ -45,7 +45,6 @@ export class ICSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Integrated Calendar" });
     containerEl.createEl("p", {
       text: "구독 캘린더(iCloud / Outlook / Google 등 ICS 주소)와 노트 안의 일정·할일을 한 화면에 통합합니다.",
       cls: "setting-item-description",
@@ -78,11 +77,8 @@ export class ICSettingTab extends PluginSettingTab {
           t.setPlaceholder("https://....ics").setValue(src.url).onChange(async (v) => {
             src.url = v.trim(); await this.plugin.saveSettings();
           }));
-      s.controlEl.querySelectorAll("input").forEach((el, i) => {
-        if (i === 1) (el as HTMLInputElement).style.minWidth = "16em";
-      });
       // 색상
-      const colorInput = s.controlEl.createEl("input", { type: "color" });
+      const colorInput = s.controlEl.createEl("input", { type: "color", cls: "ic-color-input" });
       colorInput.value = src.color;
       colorInput.addEventListener("change", async () => { src.color = colorInput.value; await this.plugin.saveSettings(); });
       // 켜기/끄기
@@ -120,7 +116,7 @@ export class ICSettingTab extends PluginSettingTab {
         this.plugin.settings.localName = v; await this.plugin.saveSettings();
       }))
       .then((s) => {
-        const c = s.controlEl.createEl("input", { type: "color" });
+        const c = s.controlEl.createEl("input", { type: "color", cls: "ic-color-input" });
         c.value = this.plugin.settings.localColor;
         c.addEventListener("change", async () => { this.plugin.settings.localColor = c.value; await this.plugin.saveSettings(); });
       });
