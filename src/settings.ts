@@ -1,0 +1,160 @@
+import { App, PluginSettingTab, Setting, ButtonComponent } from "obsidian";
+import type IntegratedCalendarPlugin from "./main";
+
+export interface CalendarSource {
+  name: string;
+  color: string;
+  icon: string;
+  url: string;
+  enabled: boolean;
+}
+
+export interface ICSettings {
+  sources: CalendarSource[];
+  localName: string;
+  localColor: string;
+  localIcon: string;
+  eventFolder: string; // 로컬 일정 노트 폴더 (frontmatter 기반)
+  taskGlobExclude: string; // 할일 스캔에서 제외할 폴더(쉼표구분)
+  firstDayMonday: boolean;
+  cacheMinutes: number;
+}
+
+export const DEFAULT_SETTINGS: ICSettings = {
+  sources: [],
+  localName: "내 일정",
+  localColor: "#3a8bcd",
+  localIcon: "🔵",
+  eventFolder: "1. 일정",
+  taskGlobExclude: "0. 템플릿",
+  firstDayMonday: false,
+  cacheMinutes: 10,
+};
+
+const PALETTE = ["🔵", "🟠", "🟣", "🟢", "🔴", "🟡", "🟤", "⚫"];
+
+export class ICSettingTab extends PluginSettingTab {
+  plugin: IntegratedCalendarPlugin;
+
+  constructor(app: App, plugin: IntegratedCalendarPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    containerEl.createEl("h2", { text: "Integrated Calendar" });
+    containerEl.createEl("p", {
+      text: "구독 캘린더(iCloud / Outlook / Google 등 ICS 주소)와 노트 안의 일정·할일을 한 화면에 통합합니다.",
+      cls: "setting-item-description",
+    });
+
+    // ---- 구독 캘린더 소스 ----
+    new Setting(containerEl).setName("구독 캘린더").setHeading();
+
+    const help = containerEl.createEl("details");
+    help.createEl("summary", { text: "ICS 주소는 어디서 구하나요?" });
+    const ul = help.createEl("ul");
+    ul.createEl("li", { text: "iCloud: 캘린더 앱 → 캘린더 우클릭 → 공유 → '공개 캘린더' → webcal:// 주소 (앞을 https:// 로 바꾸세요)" });
+    ul.createEl("li", { text: "Google: 캘린더 설정 → '캘린더 통합' → iCal 형식의 비공개 주소" });
+    ul.createEl("li", { text: "Outlook: 설정 → 캘린더 → 공유 캘린더 → 캘린더 게시 → ICS 링크" });
+    help.createEl("p", { text: "구독 캘린더는 읽기 전용입니다 (보기만 가능).", cls: "setting-item-description" });
+
+    this.plugin.settings.sources.forEach((src, idx) => {
+      const s = new Setting(containerEl)
+        .addText((t) =>
+          t.setPlaceholder("이름 (예: 회사)").setValue(src.name).onChange(async (v) => {
+            src.name = v; await this.plugin.saveSettings();
+          }))
+        .addDropdown((d) => {
+          PALETTE.forEach((emoji) => d.addOption(emoji, emoji));
+          d.setValue(PALETTE.includes(src.icon) ? src.icon : "🟠").onChange(async (v) => {
+            src.icon = v; await this.plugin.saveSettings();
+          });
+        })
+        .addText((t) =>
+          t.setPlaceholder("https://....ics").setValue(src.url).onChange(async (v) => {
+            src.url = v.trim(); await this.plugin.saveSettings();
+          }));
+      s.controlEl.querySelectorAll("input").forEach((el, i) => {
+        if (i === 1) (el as HTMLInputElement).style.minWidth = "16em";
+      });
+      // 색상
+      const colorInput = s.controlEl.createEl("input", { type: "color" });
+      colorInput.value = src.color;
+      colorInput.addEventListener("change", async () => { src.color = colorInput.value; await this.plugin.saveSettings(); });
+      // 켜기/끄기
+      s.addToggle((tg) => tg.setTooltip("표시 켜기/끄기").setValue(src.enabled).onChange(async (v) => {
+        src.enabled = v; await this.plugin.saveSettings();
+      }));
+      // 삭제
+      s.addExtraButton((b) => b.setIcon("trash").setTooltip("삭제").onClick(async () => {
+        this.plugin.settings.sources.splice(idx, 1);
+        await this.plugin.saveSettings();
+        this.display();
+      }));
+    });
+
+    new Setting(containerEl).addButton((b: ButtonComponent) =>
+      b.setButtonText("+ 캘린더 추가").setCta().onClick(async () => {
+        const icon = PALETTE[(this.plugin.settings.sources.length + 1) % PALETTE.length];
+        const colorByIcon: any = { "🟠": "#ff8c42", "🟣": "#9b59b6", "🟢": "#2ecc71", "🔴": "#e74c3c", "🟡": "#f1c40f", "🟤": "#8d6e63", "⚫": "#555555", "🔵": "#3a8bcd" };
+        this.plugin.settings.sources.push({ name: "", color: colorByIcon[icon] || "#ff8c42", icon, url: "", enabled: true });
+        await this.plugin.saveSettings();
+        this.display();
+      }));
+
+    // ---- 내 일정(로컬) ----
+    new Setting(containerEl).setName("내 노트 일정").setHeading();
+    new Setting(containerEl)
+      .setName("일정 폴더")
+      .setDesc("frontmatter(date/startTime…)로 일정을 적는 노트 폴더. 비우면 사용 안 함.")
+      .addText((t) => t.setValue(this.plugin.settings.eventFolder).onChange(async (v) => {
+        this.plugin.settings.eventFolder = v.trim(); await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("내 일정 표시 이름 / 색")
+      .addText((t) => t.setValue(this.plugin.settings.localName).onChange(async (v) => {
+        this.plugin.settings.localName = v; await this.plugin.saveSettings();
+      }))
+      .then((s) => {
+        const c = s.controlEl.createEl("input", { type: "color" });
+        c.value = this.plugin.settings.localColor;
+        c.addEventListener("change", async () => { this.plugin.settings.localColor = c.value; await this.plugin.saveSettings(); });
+      });
+
+    // ---- 할일 ----
+    new Setting(containerEl).setName("할일").setHeading();
+    new Setting(containerEl)
+      .setName("할일 스캔 제외 폴더")
+      .setDesc("쉼표로 구분. 이 폴더의 체크박스는 달력/아젠다에서 제외합니다.")
+      .addText((t) => t.setValue(this.plugin.settings.taskGlobExclude).onChange(async (v) => {
+        this.plugin.settings.taskGlobExclude = v; await this.plugin.saveSettings();
+      }));
+
+    // ---- 일반 ----
+    new Setting(containerEl).setName("일반").setHeading();
+    new Setting(containerEl)
+      .setName("월요일 시작")
+      .setDesc("끄면 일요일 시작.")
+      .addToggle((tg) => tg.setValue(this.plugin.settings.firstDayMonday).onChange(async (v) => {
+        this.plugin.settings.firstDayMonday = v; await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("구독 캐시(분)")
+      .setDesc("구독 ICS를 다시 받기 전 캐시 유지 시간.")
+      .addText((t) => t.setValue(String(this.plugin.settings.cacheMinutes)).onChange(async (v) => {
+        const n = parseInt(v, 10); if (!isNaN(n) && n >= 0) { this.plugin.settings.cacheMinutes = n; await this.plugin.saveSettings(); }
+      }));
+
+    // ---- 사용법 ----
+    new Setting(containerEl).setName("사용법").setHeading();
+    const usage = containerEl.createDiv({ cls: "setting-item-description" });
+    usage.createEl("p", { text: "노트에 아래 코드블록을 넣으면 달력/목록이 그려집니다:" });
+    const pre1 = usage.createEl("pre"); pre1.createEl("code", { text: "```calendar\n```  →  월/주/일 전환 달력" });
+    const pre2 = usage.createEl("pre"); pre2.createEl("code", { text: "```calendar-agenda today\n```  →  오늘 일정 목록" });
+    const pre3 = usage.createEl("pre"); pre3.createEl("code", { text: "```calendar-agenda 14\n```  →  앞으로 14일 일정 목록" });
+  }
+}
