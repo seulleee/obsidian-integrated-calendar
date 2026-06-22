@@ -13,8 +13,16 @@
     "ics",
     "dataview"
   ],
-  "author": "slogup",
+  "author": "seulleee",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seulleee/obsidian-integrated-calendar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/seulleee/obsidian-integrated-calendar/issues"
+  },
+  "homepage": "https://github.com/seulleee/obsidian-integrated-calendar#readme",
   "devDependencies": {
     "@types/node": "^20.11.0",
     "builtin-modules": "^3.3.0",
