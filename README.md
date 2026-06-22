@@ -64,6 +64,18 @@ npm run dev     # 워치 빌드
 npm run build   # 타입체크 + 프로덕션 빌드 → main.js
 ```
 
+### 릴리스
+버전 올리고 빌드·커밋·태그·푸시·GitHub 릴리스를 한 번에:
+
+```bash
+./release.sh patch          # 0.1.0 → 0.1.1 (minor / major 도 가능)
+./release.sh 0.2.0          # 버전 직접 지정
+./release.sh 0.2.0 "변경 요약"
+DRY=1 ./release.sh patch    # 실제 변경 없이 미리보기
+```
+
+릴리스가 올라오면 BRAT 사용자는 자동 업데이트됩니다.
+
 소스 구조:
 - `src/ics.ts` — ICS 파싱 + RRULE/멀티데이 전개 (Obsidian 비의존)
 - `src/data.ts` — vault 로컬 일정(frontmatter) + 할일(체크박스) 수집
