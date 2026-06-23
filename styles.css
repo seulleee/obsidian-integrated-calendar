@@ -38,3 +38,42 @@
 
 /* 설정 탭 */
 .ic-color-input { width: 2.4em; height: 1.6em; padding: 0; border: 1px solid var(--background-modifier-border); border-radius: 4px; cursor: pointer; vertical-align: middle; }
+
+/* ===== 할일 대시보드 (integrated-tasks) ===== */
+.ic-tasks { font-size: var(--font-text-size); }
+.ic-sec { margin: 14px 0; }
+.ic-sec-h { font-weight: 700; font-size: 1.02em; margin: 6px 0; }
+.ic-empty { color: var(--text-faint); font-size: .85em; padding: 2px 0 4px; }
+
+/* 빠른 등록 폼 */
+.ic-qa { background: var(--background-secondary); border: 1px solid var(--background-modifier-border); border-radius: 10px; padding: 12px 14px; margin: 4px 0; }
+.ic-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.ic-chip { padding: 5px 12px; border-radius: 999px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); color: var(--text-normal); cursor: pointer; font-size: .9em; font-weight: 400; }
+.ic-chip.ic-chip-on { background: var(--interactive-accent); color: var(--text-on-accent); border-color: var(--interactive-accent); font-weight: 600; }
+.ic-qa-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ic-date-wrap { position: relative; flex: 0 0 auto; }
+.ic-date-hidden { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; border: 0; padding: 0; margin: 0; pointer-events: none; }
+.ic-qa-add { box-sizing: border-box; height: 34px; flex: 0 0 auto; padding: 0 16px; border: none; border-radius: 6px; background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; cursor: pointer; font-size: .95em; }
+.ic-qa-add:disabled { opacity: .6; cursor: default; }
+.ic-qa-status { font-size: .85em; color: var(--text-muted); margin-top: 8px; min-height: 1.2em; }
+.ic-np { margin-top: 10px; }
+.ic-np-toggle { font-size: .85em; color: var(--text-accent); cursor: pointer; text-decoration: none; }
+.ic-np-form { display: none; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
+.ic-np-form.ic-open { display: flex; }
+.ic-np-inp { box-sizing: border-box; height: 34px; padding: 0 8px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); flex: 1; min-width: 160px; }
+.ic-np-btn { box-sizing: border-box; height: 34px; padding: 0 12px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); cursor: pointer; }
+
+/* 할일 행 */
+.ic-trow { display: flex; align-items: flex-start; gap: 7px; padding: 2px 0; }
+.ic-tcb { margin-top: 4px; cursor: pointer; flex: none; }
+.ic-ttext { flex: 1; line-height: 1.5; cursor: pointer; }
+.ic-ttext.ic-tdone { text-decoration: line-through; color: var(--text-muted); }
+.ic-tadd { flex: none; cursor: pointer; color: var(--text-accent); font-size: .78em; opacity: .65; white-space: nowrap; }
+.ic-tmeta { flex: none; color: var(--text-faint); font-size: .78em; white-space: nowrap; }
+.ic-subin { display: flex; gap: 6px; padding: 2px 0; }
+.ic-subin-inp { flex: 1; box-sizing: border-box; height: 30px; padding: 0 8px; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); }
+
+/* 오늘 마감 강조 박스 */
+.ic-today-box { border-left: 4px solid var(--color-red, #e5534b); background: rgba(229, 83, 75, 0.10); border-radius: 6px; padding: 4px 10px; margin: 6px 0; }
+.ic-today-h { font-weight: 700; color: var(--color-red, #e5534b); margin: 4px 0; }
+.ic-up-h { font-weight: 600; color: var(--text-muted); margin: 10px 0 2px; }

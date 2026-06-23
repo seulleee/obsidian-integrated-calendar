@@ -18,6 +18,11 @@ export interface ICSettings {
   taskGlobExclude: string; // 할일 스캔에서 제외할 폴더(쉼표구분)
   firstDayMonday: boolean;
   cacheMinutes: number;
+  // 할일 대시보드(integrated-tasks)용
+  projectFolder: string; // 프로젝트 노트 폴더
+  inboxNote: string; // 빠른메모(인박스) 노트 경로
+  taskSection: string; // 할일을 끼워 넣을 섹션 제목
+  templateFolder: string; // 모든 버킷에서 제외할 템플릿 폴더
 }
 
 export const DEFAULT_SETTINGS: ICSettings = {
@@ -29,6 +34,10 @@ export const DEFAULT_SETTINGS: ICSettings = {
   taskGlobExclude: "0. 템플릿",
   firstDayMonday: false,
   cacheMinutes: 10,
+  projectFolder: "4. 프로젝트",
+  inboxNote: "📥 빠른메모.md",
+  taskSection: "## ✅ 할일",
+  templateFolder: "0. 템플릿",
 };
 
 const PALETTE = ["🔵", "🟠", "🟣", "🟢", "🔴", "🟡", "🟤", "⚫"];
@@ -130,6 +139,37 @@ export class ICSettingTab extends PluginSettingTab {
         this.plugin.settings.taskGlobExclude = v; await this.plugin.saveSettings();
       }));
 
+    // ---- 할일 대시보드 ----
+    new Setting(containerEl).setName("할일 대시보드").setHeading();
+    containerEl.createEl("p", {
+      text: "```integrated-tasks``` 코드블록(빠른 등록·놓친 할일·해야 할 일·백로그·최근 완료)에서 쓰는 설정입니다.",
+      cls: "setting-item-description",
+    });
+    new Setting(containerEl)
+      .setName("프로젝트 폴더")
+      .setDesc("빠른 등록의 프로젝트 칩이 이 폴더의 노트로 만들어집니다.")
+      .addText((t) => t.setValue(this.plugin.settings.projectFolder).onChange(async (v) => {
+        this.plugin.settings.projectFolder = v.trim(); await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("빠른메모(인박스) 노트")
+      .setDesc("📥 빠른 메모 칩을 골랐을 때 할일이 들어가는 노트 경로.")
+      .addText((t) => t.setValue(this.plugin.settings.inboxNote).onChange(async (v) => {
+        this.plugin.settings.inboxNote = v.trim(); await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("할일 섹션 제목")
+      .setDesc("새 할일을 끼워 넣을 섹션 제목. 없으면 노트/섹션을 자동으로 만듭니다.")
+      .addText((t) => t.setValue(this.plugin.settings.taskSection).onChange(async (v) => {
+        this.plugin.settings.taskSection = v.trim() || "## ✅ 할일"; await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("템플릿 폴더(대시보드 제외)")
+      .setDesc("이 폴더의 할일은 대시보드의 모든 묶음에서 제외합니다.")
+      .addText((t) => t.setValue(this.plugin.settings.templateFolder).onChange(async (v) => {
+        this.plugin.settings.templateFolder = v.trim(); await this.plugin.saveSettings();
+      }));
+
     // ---- 일반 ----
     new Setting(containerEl).setName("일반").setHeading();
     new Setting(containerEl)
@@ -152,5 +192,6 @@ export class ICSettingTab extends PluginSettingTab {
     const pre1 = usage.createEl("pre"); pre1.createEl("code", { text: "```calendar\n```  →  월/주/일 전환 달력" });
     const pre2 = usage.createEl("pre"); pre2.createEl("code", { text: "```calendar-agenda today\n```  →  오늘 일정 목록" });
     const pre3 = usage.createEl("pre"); pre3.createEl("code", { text: "```calendar-agenda 14\n```  →  앞으로 14일 일정 목록" });
+    const pre4 = usage.createEl("pre"); pre4.createEl("code", { text: "```integrated-tasks\n```  →  빠른 등록 + 할일 대시보드" });
   }
 }

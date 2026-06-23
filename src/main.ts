@@ -1,6 +1,7 @@
 import { Notice, Plugin, requestUrl } from "obsidian";
 import { ICSettings, DEFAULT_SETTINGS, ICSettingTab } from "./settings";
 import { renderCalendar, renderAgenda, RenderCtx } from "./render";
+import { renderTasks } from "./tasks";
 import { FetchFn } from "./ics";
 
 export default class IntegratedCalendarPlugin extends Plugin {
@@ -26,6 +27,10 @@ export default class IntegratedCalendarPlugin extends Plugin {
 
     this.registerMarkdownCodeBlockProcessor("calendar-agenda", async (source, el) => {
       await renderAgenda(el, this.ctx(fetchFn), (source || "").trim() || "today");
+    });
+
+    this.registerMarkdownCodeBlockProcessor("integrated-tasks", async (_source, el) => {
+      await renderTasks(el, { app: this.app, settings: this.settings });
     });
 
     this.addSettingTab(new ICSettingTab(this.app, this));

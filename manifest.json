@@ -1,7 +1,7 @@
 {
   "id": "integrated-calendar",
   "name": "Integrated Calendar",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "minAppVersion": "1.4.0",
   "description": "Subscribe to iCloud, Outlook, and Google ICS calendars and merge them with your notes' events and tasks in month, week, and day views.",
   "author": "seulleee",
