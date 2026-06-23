@@ -77,3 +77,9 @@
 .ic-today-box { border-left: 4px solid var(--color-red, #e5534b); background: rgba(229, 83, 75, 0.10); border-radius: 6px; padding: 4px 10px; margin: 6px 0; }
 .ic-today-h { font-weight: 700; color: var(--color-red, #e5534b); margin: 4px 0; }
 .ic-up-h { font-weight: 600; color: var(--text-muted); margin: 10px 0 2px; }
+
+/* 백로그 날짜 지정 버튼 */
+.ic-bl-datewrap { position: relative; flex: none; }
+.ic-bl-btn { height: 26px; flex: none; border: 1px solid var(--background-modifier-border); border-radius: 6px; background: var(--background-primary); color: var(--text-normal); cursor: pointer; font-size: .8em; padding: 0 8px; white-space: nowrap; }
+.ic-bl-btn:hover { background: var(--background-modifier-hover); }
+.ic-bl-parent { background: var(--background-secondary); color: var(--text-muted); }

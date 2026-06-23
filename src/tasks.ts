@@ -128,6 +128,23 @@ async function addSubtask(app: App, task: DashTask, text: string): Promise<void>
   else { const d = await app.vault.read(file); await app.vault.modify(file, run(d)); }
 }
 
+// 라인에 📅 마감일 설정/교체 (백로그 → 날짜 지정)
+async function setDue(app: App, task: DashTask, date: string): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(task.path);
+  if (!(file instanceof TFile)) return;
+  const run = (data: string) => {
+    const lines = data.split("\n");
+    const i = resolveLine(lines, task);
+    if (lines[i] == null) return data;
+    let line = lines[i].replace(/\s*📅\s*\d{4}-\d{2}-\d{2}/, "");
+    if (date) line = line.replace(/\s*$/, "") + " 📅 " + date;
+    lines[i] = line;
+    return lines.join("\n");
+  };
+  if ((app.vault as any).process) await (app.vault as any).process(file, run);
+  else { const d = await app.vault.read(file); await app.vault.modify(file, run(d)); }
+}
+
 /* ---------- 빠른 등록 폼 ---------- */
 
 const CTRL = "box-sizing:border-box;height:34px;border:1px solid var(--background-modifier-border);border-radius:6px;background:var(--background-primary);color:var(--text-normal);padding:0 8px;font-size:0.95em;";
@@ -309,6 +326,40 @@ function renderSimpleRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, 
   if (meta) row.createSpan({ cls: "ic-tmeta", text: meta });
 }
 
+// 백로그 행 — 본문 + 📅 날짜(개별) + ⬆️ 부모 날짜(상속)
+function renderBacklogRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, refresh: () => void): void {
+  const { app } = ctx;
+  const row = container.createDiv({ cls: "ic-trow" });
+  const cb = row.createEl("input", { cls: "ic-tcb", attr: { type: "checkbox" } });
+  if (task.completed) cb.checked = true;
+  cb.addEventListener("change", async () => { await toggleTask(app, task, cb.checked); refresh(); });
+  const prio = task.priority ? task.priority + " " : "";
+  const txt = row.createSpan({ cls: "ic-ttext", text: prio + task.text });
+  txt.setAttr("title", "클릭하면 원본 항목으로 이동");
+  txt.addEventListener("click", () => {
+    const f = app.vault.getAbstractFileByPath(task.path);
+    if (f instanceof TFile) app.workspace.getLeaf(false).openFile(f, { eState: { line: task.line } });
+  });
+
+  // 📅 날짜 — 개별 날짜 지정(네이티브 datepicker)
+  const dWrap = row.createDiv({ cls: "ic-bl-datewrap" });
+  const dBtn = dWrap.createEl("button", { cls: "ic-bl-btn", text: "📅 날짜" });
+  const dInp = dWrap.createEl("input", { cls: "ic-date-hidden", attr: { type: "date" } });
+  dBtn.addEventListener("click", () => {
+    const di = dInp as HTMLInputElement & { showPicker?: () => void };
+    if (typeof di.showPicker === "function") { try { di.showPicker(); return; } catch (e) { /* fall through */ } }
+    dInp.style.pointerEvents = "auto"; dInp.focus(); dInp.click();
+  });
+  dInp.addEventListener("change", async () => { if (dInp.value) { await setDue(app, task, dInp.value); refresh(); } });
+
+  // ⬆️ 부모 날짜 — 상위 태스크 마감일로(하위 항목이고 부모에 날짜가 있을 때만)
+  if (task.parentDueDate) {
+    const pd = task.parentDueDate;
+    const pBtn = row.createEl("button", { cls: "ic-bl-btn ic-bl-parent", text: "⬆️ 부모(" + pd + ")" });
+    pBtn.addEventListener("click", async () => { await setDue(app, task, pd); refresh(); });
+  }
+}
+
 /* ---------- 메인 렌더 ---------- */
 
 export async function renderTasks(el: HTMLElement, ctx: TasksCtx): Promise<void> {
@@ -356,7 +407,7 @@ export async function renderTasks(el: HTMLElement, ctx: TasksCtx): Promise<void>
     const bl = body.createDiv({ cls: "ic-sec" });
     bl.createEl("div", { cls: "ic-sec-h", text: "📥 백로그 · " + b.backlog.length + "건" });
     if (!b.backlog.length) bl.createDiv({ cls: "ic-empty", text: "백로그가 비었습니다." });
-    for (const t of b.backlog) renderSimpleRow(bl, ctx, t, "", () => draw());
+    for (const t of b.backlog) renderBacklogRow(bl, ctx, t, () => draw());
 
     // 🎉 최근 완료(7일)
     const dn = body.createDiv({ cls: "ic-sec" });

@@ -123,6 +123,7 @@ export interface DashTask {
   raw: string; // 원본 라인 그대로
   path: string;
   line: number;
+  parentDueDate: string | null; // 직속 부모의 📅 (백로그에서 상속용)
   subtasks: DashTask[];
 }
 
@@ -180,6 +181,7 @@ async function scanFileTaskTree(app: App, f: TFile): Promise<DashTask[]> {
         raw,
         path: f.path,
         line: ln,
+        parentDueDate: null,
         subtasks: [],
       },
     });
@@ -190,8 +192,12 @@ async function scanFileTaskTree(app: App, f: TFile): Promise<DashTask[]> {
   const stack: { task: DashTask; indent: number }[] = [];
   for (const node of flat) {
     while (stack.length && stack[stack.length - 1].indent >= node.indent) stack.pop();
-    if (stack.length) stack[stack.length - 1].task.subtasks.push(node.task);
-    else roots.push(node.task);
+    if (stack.length) {
+      stack[stack.length - 1].task.subtasks.push(node.task);
+      node.task.parentDueDate = stack[stack.length - 1].task.due;
+    } else {
+      roots.push(node.task);
+    }
     stack.push(node);
   }
   return roots;
