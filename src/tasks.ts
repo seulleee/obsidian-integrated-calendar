@@ -147,6 +147,19 @@ async function setDue(app: App, task: DashTask, date: string): Promise<void> {
 
 /* ---------- 빠른 등록 폼 ---------- */
 
+const ATTACH_FOLDER = "_첨부";
+
+// 이미지를 첨부 폴더에 바이너리로 저장하고 파일명 반환
+async function saveImage(app: App, file: File, idx: number): Promise<string> {
+  const m = (file.name || "").match(/\.([a-zA-Z0-9]+)$/);
+  const ext = (m ? m[1] : "png").toLowerCase();
+  const name = "qa-" + moment().format("YYYYMMDD-HHmmssSSS") + (idx ? "-" + idx : "") + "." + ext;
+  const folder = normalizePath(ATTACH_FOLDER);
+  if (!app.vault.getAbstractFileByPath(folder)) { try { await app.vault.createFolder(folder); } catch (e) { /* 이미 있으면 무시 */ } }
+  await app.vault.createBinary(normalizePath(folder + "/" + name), await file.arrayBuffer());
+  return name;
+}
+
 const CTRL = "box-sizing:border-box;height:34px;border:1px solid var(--background-modifier-border);border-radius:6px;background:var(--background-primary);color:var(--text-normal);padding:0 8px;font-size:0.95em;";
 
 function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void): void {
@@ -204,20 +217,55 @@ function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void):
   prioSel.setAttr("style", CTRL + "flex:0 0 auto;cursor:pointer;");
   for (const p of PRIORITIES) { const o = prioSel.createEl("option", { text: p.label }); o.value = p.value; }
 
+  // 📎 이미지 첨부 (파일 선택 / 붙여넣기 / 드래그&드롭)
+  let pendingImages: File[] = [];
+  const imgBtn = row.createEl("button", { cls: "ic-qa-img", text: "📎 이미지" });
+  imgBtn.setAttr("style", CTRL + "flex:0 0 auto;cursor:pointer;");
+  const imgInp = row.createEl("input", { cls: "ic-qa-imginp", attr: { type: "file", accept: "image/*", multiple: "" } });
+  imgInp.setAttr("style", "display:none;");
+  const updateImg = () => imgBtn.setText(pendingImages.length ? "📎 이미지 " + pendingImages.length : "📎 이미지");
+  imgBtn.addEventListener("click", () => imgInp.click());
+  imgInp.addEventListener("change", () => { pendingImages = pendingImages.concat(Array.from(imgInp.files || [])); imgInp.value = ""; updateImg(); });
+
   const addBtn = row.createEl("button", { cls: "ic-qa-add", text: "➕ 추가" });
 
   const status = root.createDiv({ cls: "ic-qa-status" });
 
+  // 본문칸에 이미지 붙여넣기(스크린샷 등)
+  descInp.addEventListener("paste", (e: ClipboardEvent) => {
+    const items = e.clipboardData ? e.clipboardData.items : null;
+    let got = false;
+    if (items) {
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        if (it.type && it.type.indexOf("image/") === 0) { const f = it.getAsFile(); if (f) { pendingImages.push(f); got = true; } }
+      }
+    }
+    if (got) { e.preventDefault(); updateImg(); status.setText("🖼️ 이미지 " + pendingImages.length + "장 첨부 대기 (➕ 추가 누르면 저장)"); }
+  });
+  // 폼에 이미지 드래그&드롭
+  root.addEventListener("dragover", (e: DragEvent) => { e.preventDefault(); });
+  root.addEventListener("drop", (e: DragEvent) => {
+    e.preventDefault();
+    const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []).filter((f) => f.type && f.type.indexOf("image/") === 0);
+    if (files.length) { pendingImages = pendingImages.concat(files); updateImg(); status.setText("🖼️ 이미지 " + pendingImages.length + "장 첨부 대기 (➕ 추가 누르면 저장)"); }
+  });
+
   const submit = async () => {
     const desc = descInp.value.trim();
     if (!desc) { descInp.focus(); return; }
-    const line = buildLine(selected.tag || "", desc, prioSel.value, dueDate);
+    let block = buildLine(selected.tag || "", desc, prioSel.value, dueDate);
     addBtn.disabled = true;
     try {
-      await appendTask(app, settings, selected.path, line);
+      for (let i = 0; i < pendingImages.length; i++) {
+        const nm = await saveImage(app, pendingImages[i], i);
+        block += "\n\t- ![[" + nm + "]]";
+      }
+      await appendTask(app, settings, selected.path, block);
       const where = selected.tag ? "📁 " + selected.tag : "📥 빠른 메모";
-      status.setText("✅ 추가됨 → " + where + (dueDate ? "  · 📅 " + dueDate : "  · 마감 없음(백로그)"));
-      descInp.value = ""; descInp.focus();
+      const imgN = pendingImages.length;
+      status.setText("✅ 추가됨 → " + where + (dueDate ? "  · 📅 " + dueDate : "  · 마감 없음(백로그)") + (imgN ? "  · 🖼️ " + imgN + "장" : ""));
+      descInp.value = ""; pendingImages = []; updateImg(); descInp.focus();
       new Notice("할 일 추가: " + desc);
       refresh();
     } catch (e: any) {
