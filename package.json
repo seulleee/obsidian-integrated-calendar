@@ -1,6 +1,6 @@
 {
   "name": "obsidian-integrated-calendar",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Unified calendar dashboard for Obsidian: subscribe to ICS calendars and merge with notes' events and tasks.",
   "main": "main.js",
   "scripts": {

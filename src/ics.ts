@@ -184,7 +184,27 @@ export interface ParsedSource {
   url: string;
 }
 
-// 구독 소스들에서 윈도우 범위 일정 수집. 취소/중복/오버라이드 처리.
+// 파싱 결과 캐시(URL별): 원본 텍스트가 그대로면 재파싱하지 않음.
+// fetchFn 이 원본 신선도(cacheMinutes)를 관리하므로, 원본이 바뀌면 자동으로 재파싱됨(staleness 없음).
+const _parsedCache: Record<string, { raw: string; vevents: any[]; overrides: any }> = {};
+
+async function getParsed(src: ParsedSource, fetchFn: FetchFn): Promise<{ vevents: any[]; overrides: any }> {
+  const raw = await fetchFn(src.url);
+  const c = _parsedCache[src.url];
+  if (c && c.raw === raw) return c;
+  let vevents = parseVevents(unfold(raw));
+  vevents = vevents.filter((e) =>
+    e.start && e.status !== "CANCELLED" && !/^\s*(취소됨|cancell?ed)\s*:/i.test(e.summary || ""));
+  const overrides: any = {};
+  for (const e of vevents) {
+    if (e.recurrenceId && e.uid) (overrides[e.uid] = overrides[e.uid] || new Set()).add(e.recurrenceId);
+  }
+  const rec = { raw, vevents, overrides };
+  _parsedCache[src.url] = rec;
+  return rec;
+}
+
+// 구독 소스들에서 윈도우 범위 일정 수집. 취소/중복/오버라이드 처리. 파싱 결과는 URL별로 캐시.
 export async function fetchExternal(
   sources: ParsedSource[],
   fetchFn: FetchFn,
@@ -196,13 +216,7 @@ export async function fetchExternal(
   const out: (CalEvent | SourceError)[] = [];
   for (const src of sources) {
     try {
-      let vevents = parseVevents(unfold(await fetchFn(src.url)));
-      vevents = vevents.filter((e) =>
-        e.start && e.status !== "CANCELLED" && !/^\s*(취소됨|cancell?ed)\s*:/i.test(e.summary || ""));
-      const overrides: any = {};
-      for (const e of vevents) {
-        if (e.recurrenceId && e.uid) (overrides[e.uid] = overrides[e.uid] || new Set()).add(e.recurrenceId);
-      }
+      const { vevents, overrides } = await getParsed(src, fetchFn);
       const seen = new Set<string>();
       for (const ev of vevents) {
         let occs: any[] = [];
