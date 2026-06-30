@@ -162,13 +162,16 @@ async function saveImage(app: App, file: File, idx: number): Promise<string> {
 
 const CTRL = "box-sizing:border-box;height:34px;border:1px solid var(--background-modifier-border);border-radius:6px;background:var(--background-primary);color:var(--text-normal);padding:0 8px;font-size:0.95em;";
 
+// 선택한 프로젝트를 redraw(할일 추가 후 draw 재실행) 사이에도 유지 (모듈 유지되는 동안)
+let _lastSelected: { path: string; tag: string } | null = null;
+
 function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void): void {
   const { app, settings } = ctx;
   const root = parent.createDiv({ cls: "ic-qa" });
   root.createEl("div", { cls: "ic-sec-h", text: "➕ 빠른 등록" });
 
   // 프로젝트 선택 = 클릭 칩
-  let selected: { path: string; tag: string } = { path: settings.inboxNote, tag: "" };
+  let selected: { path: string; tag: string } = (_lastSelected && _lastSelected.path) ? _lastSelected : { path: settings.inboxNote, tag: "" };
   const projBar = root.createDiv({ cls: "ic-chips" });
   const highlight = () => {
     for (const b of Array.from(projBar.children) as HTMLElement[]) {
@@ -178,14 +181,14 @@ function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void):
   const mkBtn = (label: string, target: { path: string; tag: string }) => {
     const b = projBar.createEl("button", { text: label, cls: "ic-chip" });
     b.dataset.path = normalizePath(target.path);
-    b.addEventListener("click", () => { selected = target; highlight(); });
+    b.addEventListener("click", () => { selected = target; _lastSelected = target; highlight(); });
   };
   const buildBar = () => {
     projBar.empty();
     mkBtn("📥 빠른 메모", { path: settings.inboxNote, tag: "" });
     for (const p of listProjectNotes(app, settings.projectFolder)) mkBtn("📁 " + p.name, { path: p.path, tag: p.name });
     if (!Array.from(projBar.children).some((b) => (b as HTMLElement).dataset.path === normalizePath(selected.path))) {
-      selected = { path: settings.inboxNote, tag: "" };
+      selected = { path: settings.inboxNote, tag: "" }; _lastSelected = selected;
     }
     highlight();
   };
@@ -251,11 +254,13 @@ function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void):
     if (files.length) { pendingImages = pendingImages.concat(files); updateImg(); status.setText("🖼️ 이미지 " + pendingImages.length + "장 첨부 대기 (➕ 추가 누르면 저장)"); }
   });
 
+  let submitting = false;
   const submit = async () => {
+    if (submitting) return; // 중복 등록 방지 (Enter 연타 / IME 확정 Enter / 버튼+Enter 동시)
     const desc = descInp.value.trim();
     if (!desc) { descInp.focus(); return; }
     let block = buildLine(selected.tag || "", desc, prioSel.value, dueDate);
-    addBtn.disabled = true;
+    submitting = true; addBtn.disabled = true;
     try {
       for (let i = 0; i < pendingImages.length; i++) {
         const nm = await saveImage(app, pendingImages[i], i);
@@ -271,11 +276,11 @@ function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void):
     } catch (e: any) {
       status.setText("⚠️ 실패: " + (e?.message || e));
     } finally {
-      addBtn.disabled = false;
+      submitting = false; addBtn.disabled = false;
     }
   };
   addBtn.addEventListener("click", submit);
-  descInp.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+  descInp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) submit(); });
 
   // 새 프로젝트 등록
   const npWrap = root.createDiv({ cls: "ic-np" });
@@ -294,7 +299,7 @@ function buildQuickAdd(parent: HTMLElement, ctx: TasksCtx, refresh: () => void):
     npBtn.disabled = true;
     try {
       const p = await createProject(app, settings, name);
-      selected = { path: p.path, tag: p.name };
+      selected = { path: p.path, tag: p.name }; _lastSelected = selected;
       buildBar();
       npInp.value = ""; npForm.removeClass("ic-open");
       status.setText("✅ 프로젝트 생성: 📁 " + p.name);
