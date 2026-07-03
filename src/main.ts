@@ -3,6 +3,7 @@ import { ICSettings, DEFAULT_SETTINGS, ICSettingTab } from "./settings";
 import { renderCalendar, renderAgenda, RenderCtx } from "./render";
 import { renderTasks } from "./tasks";
 import { FetchFn } from "./ics";
+import { clearJiraCache } from "./jira";
 
 export default class IntegratedCalendarPlugin extends Plugin {
   settings: ICSettings;
@@ -37,10 +38,11 @@ export default class IntegratedCalendarPlugin extends Plugin {
 
     this.addCommand({
       id: "clear-ics-cache",
-      name: "구독 캐시 비우기",
+      name: "구독·Jira 캐시 비우기",
       callback: () => {
         this.icsCache = {};
-        new Notice("Integrated Calendar: 구독 캐시를 비웠습니다. 노트를 다시 열면 새로 받아옵니다.");
+        clearJiraCache();
+        new Notice("Integrated Calendar: 구독·Jira 캐시를 비웠습니다. 노트를 다시 열면 새로 받아옵니다.");
       },
     });
   }

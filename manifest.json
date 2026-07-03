@@ -1,9 +1,9 @@
 {
   "id": "integrated-calendar",
   "name": "Integrated Calendar",
-  "version": "0.3.2",
+  "version": "0.5.0",
   "minAppVersion": "1.4.0",
-  "description": "Subscribe to iCloud, Outlook, and Google ICS calendars and merge them with your notes' events and tasks in month, week, and day views.",
+  "description": "Subscribe to iCloud, Outlook, and Google ICS calendars and merge them with your notes' events and tasks in month, week, and day views. Optionally pull read-only Jira Cloud issues into the task dashboard.",
   "author": "seulleee",
   "authorUrl": "https://github.com/seulleee",
   "isDesktopOnly": false

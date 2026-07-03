@@ -3,14 +3,16 @@
  * vault 의 🏠 홈 대시보드(DataviewJS)를 Dataview 없이 포팅.
  * DOM API(createEl/createDiv/createSpan)로만 그립니다 (innerHTML 미사용).
  */
-import { App, Notice, TFile, TFolder, moment, normalizePath } from "obsidian";
+import { App, Menu, Notice, TFile, TFolder, moment, normalizePath } from "obsidian";
 import type { ICSettings } from "./settings";
 import {
   DashTask,
+  TaskStatus,
   getTaskBuckets,
   listProjectNotes,
   parentDue,
 } from "./data";
+import { getJiraIssues, bucketJira, JiraIssue, JiraBuckets } from "./jira";
 
 export interface TasksCtx {
   app: App;
@@ -24,6 +26,13 @@ const PRIORITIES: { label: string; value: string }[] = [
   { label: "⏫ 높음", value: "⏫" },
   { label: "🔺 긴급", value: "🔺" },
 ];
+
+const STATUSES: { key: TaskStatus; marker: string; label: string; icon: string }[] = [
+  { key: "todo", marker: " ", label: "할 일", icon: "○" },
+  { key: "inprogress", marker: "/", label: "진행 중", icon: "◐" },
+  { key: "done", marker: "x", label: "완료", icon: "✔" },
+];
+function statusMeta(key: TaskStatus) { return STATUSES.find((s) => s.key === key) || STATUSES[0]; }
 
 /* ---------- 노트 쓰기 헬퍼 ---------- */
 
@@ -81,24 +90,44 @@ function resolveLine(lines: string[], task: DashTask): number {
   return task.line;
 }
 
-async function toggleTask(app: App, task: DashTask, done: boolean): Promise<void> {
+async function setTaskStatus(app: App, task: DashTask, statusKey: TaskStatus): Promise<void> {
   const file = app.vault.getAbstractFileByPath(task.path);
   if (!(file instanceof TFile)) return;
+  const marker = statusMeta(statusKey).marker;
   const stamp = moment().format("YYYY-MM-DD");
   const run = (data: string) => {
     const lines = data.split("\n");
     const i = resolveLine(lines, task);
     if (lines[i] == null) return data;
-    if (done) {
-      lines[i] = lines[i].replace(/\[ \]/, "[x]");
+    lines[i] = lines[i].replace(/^(\s*[-*]\s*)\[[^\]]\]/, "$1[" + marker + "]");
+    if (statusKey === "done") {
       if (!/✅\s*\d{4}-\d{2}-\d{2}/.test(lines[i])) lines[i] = lines[i].replace(/\s*$/, "") + " ✅ " + stamp;
     } else {
-      lines[i] = lines[i].replace(/\[[xX]\]/, "[ ]").replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/, "");
+      lines[i] = lines[i].replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/, "");
     }
     return lines.join("\n");
   };
   if ((app.vault as any).process) await (app.vault as any).process(file, run);
   else { const d = await app.vault.read(file); await app.vault.modify(file, run(d)); }
+}
+
+// 상태 배지(버튼) — 클릭 시 Menu 드롭다운으로 상태 선택
+function renderStatusBadge(row: HTMLElement, ctx: TasksCtx, task: DashTask, refresh: () => void): void {
+  const cur = statusMeta(task.status);
+  const badge = row.createEl("button", { cls: "ic-status ic-status-" + cur.key, text: cur.icon + " " + cur.label });
+  badge.setAttr("title", "상태 변경");
+  badge.addEventListener("click", (e: MouseEvent) => {
+    e.preventDefault();
+    const menu = new Menu();
+    for (const s of STATUSES) {
+      menu.addItem((mi) => {
+        mi.setTitle(s.icon + " " + s.label);
+        if ((mi as any).setChecked) (mi as any).setChecked(s.key === cur.key);
+        mi.onClick(async () => { await setTaskStatus(ctx.app, task, s.key); refresh(); });
+      });
+    }
+    menu.showAtMouseEvent(e);
+  });
 }
 
 async function addSubtask(app: App, task: DashTask, text: string): Promise<void> {
@@ -321,12 +350,7 @@ function renderTaskRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, de
   const row = container.createDiv({ cls: "ic-trow" });
   row.style.marginLeft = depth * 22 + "px";
 
-  const cb = row.createEl("input", { cls: "ic-tcb", attr: { type: "checkbox" } });
-  if (task.completed) cb.checked = true;
-  cb.addEventListener("change", async () => {
-    await toggleTask(app, task, cb.checked);
-    refresh();
-  });
+  renderStatusBadge(row, ctx, task, refresh);
 
   const prio = task.priority ? task.priority + " " : "";
   const txt = row.createSpan({ cls: "ic-ttext" + (task.completed ? " ic-tdone" : ""), text: prio + task.text });
@@ -366,9 +390,7 @@ function renderTaskRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, de
 function renderSimpleRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, meta: string, refresh: () => void): void {
   const { app } = ctx;
   const row = container.createDiv({ cls: "ic-trow" });
-  const cb = row.createEl("input", { cls: "ic-tcb", attr: { type: "checkbox" } });
-  if (task.completed) cb.checked = true;
-  cb.addEventListener("change", async () => { await toggleTask(app, task, cb.checked); refresh(); });
+  renderStatusBadge(row, ctx, task, refresh);
   const prio = task.priority ? task.priority + " " : "";
   const txt = row.createSpan({ cls: "ic-ttext" + (task.completed ? " ic-tdone" : ""), text: prio + task.text });
   txt.setAttr("title", "클릭하면 원본 항목으로 이동");
@@ -383,9 +405,7 @@ function renderSimpleRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, 
 function renderBacklogRow(container: HTMLElement, ctx: TasksCtx, task: DashTask, refresh: () => void): void {
   const { app } = ctx;
   const row = container.createDiv({ cls: "ic-trow" });
-  const cb = row.createEl("input", { cls: "ic-tcb", attr: { type: "checkbox" } });
-  if (task.completed) cb.checked = true;
-  cb.addEventListener("change", async () => { await toggleTask(app, task, cb.checked); refresh(); });
+  renderStatusBadge(row, ctx, task, refresh);
   const prio = task.priority ? task.priority + " " : "";
   const txt = row.createSpan({ cls: "ic-ttext", text: prio + task.text });
   txt.setAttr("title", "클릭하면 원본 항목으로 이동");
@@ -413,6 +433,25 @@ function renderBacklogRow(container: HTMLElement, ctx: TasksCtx, task: DashTask,
   }
 }
 
+/* ---------- Jira 이슈 행 (읽기 전용, 클릭 시 브라우저로 열기) ---------- */
+
+function openExternal(url: string): void {
+  try { window.open(url, "_blank"); } catch (e) { /* noop */ }
+}
+
+function renderJiraRow(container: HTMLElement, issue: JiraIssue): void {
+  const row = container.createDiv({ cls: "ic-trow ic-jira-row" });
+  const key = row.createEl("a", { cls: "ic-jira-key", text: issue.key, attr: { href: issue.url } });
+  key.setAttr("title", "Jira 에서 열기: " + issue.url);
+  key.addEventListener("click", (e) => { e.preventDefault(); openExternal(issue.url); });
+  const prio = issue.priority ? issue.priority + " " : "";
+  const txt = row.createEl("a", { cls: "ic-ttext ic-jira-summary", text: prio + issue.summary, attr: { href: issue.url } });
+  txt.setAttr("title", "Jira 에서 열기");
+  txt.addEventListener("click", (e) => { e.preventDefault(); openExternal(issue.url); });
+  if (issue.status) row.createSpan({ cls: "ic-jira-status", text: issue.status });
+  if (issue.due) row.createSpan({ cls: "ic-tmeta", text: "📅 " + issue.due });
+}
+
 /* ---------- 메인 렌더 ---------- */
 
 export async function renderTasks(el: HTMLElement, ctx: TasksCtx): Promise<void> {
@@ -433,27 +472,50 @@ export async function renderTasks(el: HTMLElement, ctx: TasksCtx): Promise<void>
       body.createDiv({ cls: "ic-err", text: "⚠️ 할일을 표시할 수 없습니다: " + (e?.message || e) });
       return;
     }
+
+    // Jira 이슈(설정 켜져 있으면) — 캐시 사용, 실패해도 할일은 표시
+    const S = ctx.settings;
+    const todayISO = moment().format("YYYY-MM-DD");
+    const horizonISO = moment().add(14, "days").format("YYYY-MM-DD");
+    let jira: JiraBuckets = { overdue: [], today: [], upcoming: [], other: [] };
+    let jiraOn = false, jiraErr: string | null = null, jiraTotal = 0;
+    if (S.jiraEnabled && S.jiraSite && S.jiraToken) {
+      jiraOn = true;
+      try {
+        const issues = await getJiraIssues(S);
+        jira = bucketJira(issues, todayISO, horizonISO);
+        jiraTotal = jira.overdue.length + jira.today.length + jira.upcoming.length + jira.other.length;
+      } catch (e: any) { jiraErr = e?.message || String(e); }
+    }
     body.empty();
+
+    if (jiraOn && jiraErr) body.createDiv({ cls: "ic-err", text: "⚠️ Jira 불러오기 실패: " + jiraErr });
 
     // 🔴 지난 기한
     const od = body.createDiv({ cls: "ic-sec" });
-    od.createEl("div", { cls: "ic-sec-h", text: "🔴 지난 기한 — 놓친 할일 · " + b.overdue.length + "건" });
-    if (!b.overdue.length) od.createDiv({ cls: "ic-empty", text: "놓친 할일이 없습니다. 🎉" });
+    const odCount = b.overdue.length + jira.overdue.length;
+    od.createEl("div", { cls: "ic-sec-h", text: "🔴 지난 기한 — 놓친 할일 · " + odCount + "건" });
+    if (!odCount) od.createDiv({ cls: "ic-empty", text: "놓친 할일이 없습니다. 🎉" });
     for (const t of b.overdue) renderSimpleRow(od, ctx, t, "📅 " + t.due, () => draw());
+    for (const it of jira.overdue) renderJiraRow(od, it);
 
     // ✅ 해야 할 일
     const sec = body.createDiv({ cls: "ic-sec" });
     sec.createEl("div", { cls: "ic-sec-h", text: "✅ 해야 할 일" });
-    if (!b.today.length && !b.upcoming.length) sec.createDiv({ cls: "ic-empty", text: "오늘/다가오는 할일이 없습니다. 🎉" });
-    if (b.today.length) {
+    const todayCount = b.today.length + jira.today.length;
+    const upCount = b.upcoming.length + jira.upcoming.length;
+    if (!todayCount && !upCount) sec.createDiv({ cls: "ic-empty", text: "오늘/다가오는 할일이 없습니다. 🎉" });
+    if (todayCount) {
       const box = sec.createDiv({ cls: "ic-today-box" });
-      box.createEl("div", { cls: "ic-today-h", text: "🔴 오늘 마감 · " + b.today.length + "건" });
+      box.createEl("div", { cls: "ic-today-h", text: "🔴 오늘 마감 · " + todayCount + "건" });
       for (const t of b.today) renderTaskRow(box, ctx, t, 0, () => draw());
+      for (const it of jira.today) renderJiraRow(box, it);
     }
-    if (b.upcoming.length) {
-      sec.createEl("div", { cls: "ic-up-h", text: "📆 다가오는 2주 · " + b.upcoming.length + "건" });
+    if (upCount) {
+      sec.createEl("div", { cls: "ic-up-h", text: "📆 다가오는 2주 · " + upCount + "건" });
       const wrap = sec.createDiv();
       for (const t of b.upcoming) renderTaskRow(wrap, ctx, t, 0, () => draw());
+      for (const it of jira.upcoming) renderJiraRow(wrap, it);
     }
 
     // 📥 백로그
@@ -462,11 +524,21 @@ export async function renderTasks(el: HTMLElement, ctx: TasksCtx): Promise<void>
     if (!b.backlog.length) bl.createDiv({ cls: "ic-empty", text: "백로그가 비었습니다." });
     for (const t of b.backlog) renderBacklogRow(bl, ctx, t, () => draw());
 
+    // 🔗 Jira · 기한 없음/그 외
+    if (jiraOn && jira.other.length) {
+      const jo = body.createDiv({ cls: "ic-sec" });
+      jo.createEl("div", { cls: "ic-sec-h", text: "🔗 Jira · 기한 없음/그 외 · " + jira.other.length + "건" });
+      for (const it of jira.other) renderJiraRow(jo, it);
+    }
+
     // 🎉 최근 완료(7일)
     const dn = body.createDiv({ cls: "ic-sec" });
     dn.createEl("div", { cls: "ic-sec-h", text: "🎉 최근 완료 (7일) · " + b.done.length + "건" });
     if (!b.done.length) dn.createDiv({ cls: "ic-empty", text: "최근 완료한 할일이 없습니다." });
     for (const t of b.done) renderSimpleRow(dn, ctx, t, t.completion ? "✅ " + t.completion : "", () => draw());
+
+    // 🔗 Jira 상태 표시(연결 확인용)
+    if (jiraOn && !jiraErr) body.createDiv({ cls: "ic-jira-foot", text: "🔗 Jira 연결됨 · 이슈 " + jiraTotal + "건 (읽기 전용)" });
   };
 
   await draw();

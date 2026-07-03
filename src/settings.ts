@@ -1,5 +1,6 @@
-import { App, PluginSettingTab, Setting, ButtonComponent } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting, ButtonComponent } from "obsidian";
 import type IntegratedCalendarPlugin from "./main";
+import { getJiraIssues, clearJiraCache, DEFAULT_JQL } from "./jira";
 
 export interface CalendarSource {
   name: string;
@@ -23,6 +24,12 @@ export interface ICSettings {
   inboxNote: string; // 빠른메모(인박스) 노트 경로
   taskSection: string; // 할일을 끼워 넣을 섹션 제목
   templateFolder: string; // 모든 버킷에서 제외할 템플릿 폴더
+  // Jira 연동 (읽기 전용, Jira Cloud)
+  jiraEnabled: boolean;
+  jiraSite: string; // https://회사.atlassian.net
+  jiraEmail: string; // Atlassian 계정 이메일
+  jiraToken: string; // API 토큰 (data.json 에만 저장)
+  jiraJql: string; // 가져올 이슈 JQL
 }
 
 export const DEFAULT_SETTINGS: ICSettings = {
@@ -38,6 +45,11 @@ export const DEFAULT_SETTINGS: ICSettings = {
   inboxNote: "📥 빠른메모.md",
   taskSection: "## ✅ 할일",
   templateFolder: "0. 템플릿",
+  jiraEnabled: false,
+  jiraSite: "",
+  jiraEmail: "",
+  jiraToken: "",
+  jiraJql: "assignee = currentUser() AND statusCategory != Done ORDER BY duedate",
 };
 
 const PALETTE = ["🔵", "🟠", "🟣", "🟢", "🔴", "🟡", "🟤", "⚫"];
@@ -168,6 +180,68 @@ export class ICSettingTab extends PluginSettingTab {
       .setDesc("이 폴더의 할일은 대시보드의 모든 묶음에서 제외합니다.")
       .addText((t) => t.setValue(this.plugin.settings.templateFolder).onChange(async (v) => {
         this.plugin.settings.templateFolder = v.trim(); await this.plugin.saveSettings();
+      }));
+
+    // ---- Jira 연동 (읽기 전용) ----
+    new Setting(containerEl).setName("Jira 연동 (읽기 전용)").setHeading();
+    containerEl.createEl("p", {
+      text: "Jira Cloud 에서 내게 할당된 이슈를 가져와 할일 대시보드(마감일 기준: 지난 기한 / 오늘 / 다가오는 2주)에 함께 보여줍니다. 보기 전용이며 Jira 를 수정하지 않습니다.",
+      cls: "setting-item-description",
+    });
+    const jhelp = containerEl.createEl("details");
+    jhelp.createEl("summary", { text: "API 토큰은 어디서 발급하나요?" });
+    const jul = jhelp.createEl("ul");
+    jul.createEl("li", { text: "id.atlassian.com → 계정 관리 → 보안 → 'API 토큰 만들기' 에서 발급" });
+    jul.createEl("li", { text: "주소는 https://회사이름.atlassian.net 형식 (Jira Cloud)" });
+    jul.createEl("li", { text: "토큰은 이 볼트의 플러그인 설정(data.json)에만 저장되며, 공유 템플릿에는 포함되지 않습니다." });
+
+    new Setting(containerEl)
+      .setName("Jira 사용")
+      .setDesc("켜면 대시보드에 Jira 이슈가 함께 표시됩니다.")
+      .addToggle((tg) => tg.setValue(this.plugin.settings.jiraEnabled).onChange(async (v) => {
+        this.plugin.settings.jiraEnabled = v; await this.plugin.saveSettings();
+      }));
+    new Setting(containerEl)
+      .setName("Jira 주소")
+      .setDesc("예: https://mycompany.atlassian.net")
+      .addText((t) => t.setPlaceholder("https://회사.atlassian.net").setValue(this.plugin.settings.jiraSite).onChange(async (v) => {
+        this.plugin.settings.jiraSite = v.trim(); await this.plugin.saveSettings(); clearJiraCache();
+      }));
+    new Setting(containerEl)
+      .setName("Atlassian 이메일")
+      .addText((t) => t.setPlaceholder("you@company.com").setValue(this.plugin.settings.jiraEmail).onChange(async (v) => {
+        this.plugin.settings.jiraEmail = v.trim(); await this.plugin.saveSettings(); clearJiraCache();
+      }));
+    new Setting(containerEl)
+      .setName("API 토큰")
+      .setDesc("id.atlassian.com 에서 발급. 이 볼트에만 저장됩니다.")
+      .addText((t) => {
+        t.setPlaceholder("••••••••").setValue(this.plugin.settings.jiraToken).onChange(async (v) => {
+          this.plugin.settings.jiraToken = v.trim(); await this.plugin.saveSettings(); clearJiraCache();
+        });
+        t.inputEl.type = "password";
+        t.inputEl.autocomplete = "off";
+      });
+    new Setting(containerEl)
+      .setName("JQL")
+      .setDesc("가져올 이슈 조건. 비우면 기본값(내게 할당된 미완료 이슈)을 사용합니다.")
+      .addText((t) => t.setPlaceholder(DEFAULT_JQL).setValue(this.plugin.settings.jiraJql).onChange(async (v) => {
+        this.plugin.settings.jiraJql = v; await this.plugin.saveSettings(); clearJiraCache();
+      }));
+    new Setting(containerEl)
+      .setName("연결 테스트")
+      .setDesc("현재 설정으로 Jira 에서 이슈를 가져와 봅니다.")
+      .addButton((b: ButtonComponent) => b.setButtonText("연결 테스트").onClick(async () => {
+        b.setDisabled(true); b.setButtonText("확인 중…");
+        try {
+          clearJiraCache();
+          const issues = await getJiraIssues(this.plugin.settings, true);
+          new Notice("✅ Jira 연결 성공 — 이슈 " + issues.length + "건을 가져왔습니다.");
+        } catch (e: any) {
+          new Notice("⚠️ Jira 연결 실패: " + (e?.message || e));
+        } finally {
+          b.setDisabled(false); b.setButtonText("연결 테스트");
+        }
       }));
 
     // ---- 일반 ----

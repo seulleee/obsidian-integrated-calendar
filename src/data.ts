@@ -113,8 +113,11 @@ export async function getDueTasks(app: App, settings: ICSettings, startISO: stri
  * 할일 대시보드(integrated-tasks)용 — 완료/마감/예정/완료일/우선순위 + 하위 트리
  * ========================================================================= */
 
+export type TaskStatus = "todo" | "inprogress" | "done";
+
 export interface DashTask {
   completed: boolean;
+  status: TaskStatus; // [ ]=todo · [/]=inprogress · [x]=done
   due: string | null; // 📅 YYYY-MM-DD
   scheduled: string | null; // ⏳ YYYY-MM-DD
   completion: string | null; // ✅ YYYY-MM-DD
@@ -130,7 +133,7 @@ export interface DashTask {
 const SCHED_RE = /⏳\s*(\d{4}-\d{2}-\d{2})/;
 const DONE_DATE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/;
 const PRIO_RE = /(🔺|⏫|🔼|🔽|⏬)/;
-const TASK_LINE_RE = /^([\t ]*)[-*]\s*\[([ xX])\]\s?(.*)$/;
+const TASK_LINE_RE = /^([\t ]*)[-*]\s*\[([^\]])\]\s?(.*)$/;
 
 function indentWidth(indent: string): number {
   // 탭=4칸 가정으로 들여쓰기 깊이 비교(탭/스페이스 혼용 안전)
@@ -169,10 +172,12 @@ async function scanFileTaskTree(app: App, f: TFile): Promise<DashTask[]> {
     const schM = body.match(SCHED_RE);
     const doneM = body.match(DONE_DATE_RE);
     const prioM = body.match(PRIO_RE);
+    const status: TaskStatus = mark === "x" || mark === "X" ? "done" : mark === "/" ? "inprogress" : "todo";
     flat.push({
       indent: indentWidth(indent),
       task: {
-        completed: mark === "x" || mark === "X",
+        completed: status === "done",
+        status,
         due: dueM ? dueM[1] : null,
         scheduled: schM ? schM[1] : null,
         completion: doneM ? doneM[1] : null,
