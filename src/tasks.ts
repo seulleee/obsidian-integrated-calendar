@@ -31,6 +31,7 @@ const STATUSES: { key: TaskStatus; marker: string; label: string; icon: string }
   { key: "todo", marker: " ", label: "할 일", icon: "○" },
   { key: "inprogress", marker: "/", label: "진행 중", icon: "◐" },
   { key: "done", marker: "x", label: "완료", icon: "✔" },
+  { key: "onhold", marker: ">", label: "보류", icon: "⏸" },
 ];
 function statusMeta(key: TaskStatus) { return STATUSES.find((s) => s.key === key) || STATUSES[0]; }
 
@@ -529,6 +530,13 @@ export async function renderTasks(el: HTMLElement, ctx: TasksCtx): Promise<void>
       const jo = body.createDiv({ cls: "ic-sec" });
       jo.createEl("div", { cls: "ic-sec-h", text: "🔗 Jira · 기한 없음/그 외 · " + jira.other.length + "건" });
       for (const it of jira.other) renderJiraRow(jo, it);
+    }
+
+    // ⏸️ 보류
+    if (b.onhold.length) {
+      const oh = body.createDiv({ cls: "ic-sec" });
+      oh.createEl("div", { cls: "ic-sec-h", text: "⏸️ 보류 · " + b.onhold.length + "건" });
+      for (const t of b.onhold) renderSimpleRow(oh, ctx, t, t.due ? "📅 " + t.due : "", () => draw());
     }
 
     // 🎉 최근 완료(7일)

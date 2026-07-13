@@ -113,7 +113,7 @@ export async function getDueTasks(app: App, settings: ICSettings, startISO: stri
  * 할일 대시보드(integrated-tasks)용 — 완료/마감/예정/완료일/우선순위 + 하위 트리
  * ========================================================================= */
 
-export type TaskStatus = "todo" | "inprogress" | "done";
+export type TaskStatus = "todo" | "inprogress" | "done" | "onhold";
 
 export interface DashTask {
   completed: boolean;
@@ -172,7 +172,8 @@ async function scanFileTaskTree(app: App, f: TFile): Promise<DashTask[]> {
     const schM = body.match(SCHED_RE);
     const doneM = body.match(DONE_DATE_RE);
     const prioM = body.match(PRIO_RE);
-    const status: TaskStatus = mark === "x" || mark === "X" ? "done" : mark === "/" ? "inprogress" : "todo";
+    const status: TaskStatus =
+      mark === "x" || mark === "X" ? "done" : mark === "/" ? "inprogress" : mark === ">" ? "onhold" : "todo";
     flat.push({
       indent: indentWidth(indent),
       task: {
@@ -242,6 +243,7 @@ export interface TaskBuckets {
   upcoming: DashTask[]; // 📆 다가오는 2주 (트리 루트)
   backlog: DashTask[]; // 📥 백로그
   done: DashTask[]; // 🎉 최근 완료(7일)
+  onhold: DashTask[]; // ⏸️ 보류
 }
 
 // 다섯 버킷 생성. moment 로 날짜 비교(날짜 단위).
@@ -254,9 +256,11 @@ export async function getTaskBuckets(app: App, settings: ICSettings): Promise<Ta
 
   const isToday = (t: DashTask) => t.due === todayISO || t.scheduled === todayISO;
   const inUpcoming = (t: DashTask) => !!t.due && t.due > todayISO && t.due <= horizonISO;
+  // 활성(active) = 완료도 보류도 아닌 것
+  const active = (t: DashTask) => !t.completed && t.status !== "onhold";
 
-  // "해야 할 일" 매칭: 미완료 + (오늘 예정/마감 || 다가오는 2주 마감)
-  const matched = all.filter((t) => !t.completed && (isToday(t) || inUpcoming(t)));
+  // "해야 할 일" 매칭: 활성 + (오늘 예정/마감 || 다가오는 2주 마감)
+  const matched = all.filter((t) => active(t) && (isToday(t) || inUpcoming(t)));
 
   // 매칭된 부모의 하위로 들어간 매칭 항목은 최상위 중복 렌더 방지
   const childKeys = new Set<string>();
@@ -274,18 +278,22 @@ export async function getTaskBuckets(app: App, settings: ICSettings): Promise<Ta
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
 
   const overdue = all
-    .filter((t) => !t.completed && !!t.due && t.due < todayISO)
+    .filter((t) => active(t) && !!t.due && t.due < todayISO)
     .sort((a, b) => (a.due || "").localeCompare(b.due || ""));
 
   const backlog = all
-    .filter((t) => !t.completed && !t.due && !t.scheduled)
+    .filter((t) => active(t) && !t.due && !t.scheduled)
     .sort((a, b) => a.text.localeCompare(b.text, "ko"));
 
   const done = all
     .filter((t) => t.completed && !!t.completion && t.completion >= weekAgoISO)
     .sort((a, b) => (b.completion || "").localeCompare(a.completion || ""));
 
-  return { overdue, today: todayRoots, upcoming: upcomingRoots, backlog, done };
+  const onhold = all
+    .filter((t) => t.status === "onhold")
+    .sort((a, b) => a.text.localeCompare(b.text, "ko"));
+
+  return { overdue, today: todayRoots, upcoming: upcomingRoots, backlog, done, onhold };
 }
 
 // 프로젝트 폴더의 마크다운 노트 목록(이름 오름차순)

@@ -99,3 +99,4 @@
 .ic-status-todo { color: var(--text-muted); }
 .ic-status-inprogress { color: #d98e00; border-color: #d98e00; background: rgba(217,142,0,.12); font-weight: 600; }
 .ic-status-done { color: var(--text-faint); }
+.ic-status-onhold { color: #9b59b6; border-color: #9b59b6; background: rgba(155,89,182,.12); }
